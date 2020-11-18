@@ -1,0 +1,12 @@
+1) run on content script the XHRs,
+send them as message to background script,
+put 10 files as a ZIP file,
+download the zips from there / enable a button for a download
+
+2) show in popup window the list of all workout names (as date + ids) for example: 2020-10-12_123456, id: 555.
+and enable the user to choose whether to:
+- Download all workouts
+- Download the selected workouts
+
+3) take user id from "var endoConfig" on homepage.
+endoConfig.session.id
