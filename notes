@@ -25,3 +25,29 @@ endoConfig.session.id
 - disable download button
 - optional cancel button, if clicked - cancel download and download button is enabled again.
 - after all downloads done, enable download button again.
+
+5) ** try to download using chrome api:
+https://stackoverflow.com/a/45530938
+
+function downloadFile(options) {
+    if(!options.url) {
+        var blob = new Blob([ options.content ], {type : "text/plain;charset=UTF-8"});
+        options.url = window.URL.createObjectURL(blob);
+    }
+    chrome.downloads.download({
+        url: options.url,
+        filename: options.filename
+    })
+}
+
+// Download file with custom content
+downloadFile({
+  filename: "foo.txt",
+  content: "bar"
+});
+
+// Download file from external host
+downloadFile({
+  filename: "foo.txt",
+  url: "http://your.url/to/download"
+});
