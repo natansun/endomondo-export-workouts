@@ -51,3 +51,8 @@ downloadFile({
   filename: "foo.txt",
   url: "http://your.url/to/download"
 });
+
+6) Extension description -
+Export and backup all your workouts at once.
+Endomondo application lifespan is coming to an end at the end of 2020.
+This extension will allow you to back up all your workouts as TCX/GPX files.
