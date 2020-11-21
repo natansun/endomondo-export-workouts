@@ -56,3 +56,9 @@ downloadFile({
 Export and backup all your workouts at once.
 Endomondo application lifespan is coming to an end at the end of 2020.
 This extension will allow you to back up all your workouts as TCX/GPX files.
+
+7) save with file name of :
+start_time
+change format of it:
+start_time.split(".")[0].replace(/[-|:]/g,"").replace("T", "_")
+"2020-11-18T14:46:05.000Z"    =>        20201118_144605
