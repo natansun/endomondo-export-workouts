@@ -20,6 +20,10 @@ and download them.
 
 3) take user id from "var endoConfig" on homepage.
 endoConfig.session.id
+AND:
+endoConfig.session is exist, if logged in,
+so if not - asked to sign in,
+and only if exists, start grabbing.
 
 4) after hitting download:
 - disable download button
