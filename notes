@@ -66,3 +66,21 @@ start_time
 change format of it:
 start_time.split(".")[0].replace(/[-|:]/g,"").replace("T", "_")
 "2020-11-18T14:46:05.000Z"    =>        20201118_144605
+
+8) user id + user name from DOM:
+var profileInfo1st = document.getElementsByClassName("header-member-profile-name")[0];
+var userId, userName;
+
+if(profileInfo1st){
+    userId = profileInfo1st.href.split('/').pop();
+    userName = profileInfo1st.innerText;
+    console.log('found profile info method 1');
+} else {
+    profileInfo = $(".headerRightContent").find("a[href*='profile']")[0];
+    userId = profileInfo.href.split('/').pop();
+    userName = profileInfo.innerText;
+    console.log('found profile info method 2');
+}
+
+console.log(userId);
+console.log(userName);
