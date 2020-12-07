@@ -84,3 +84,11 @@ if(profileInfo1st){
 
 console.log(userId);
 console.log(userName);
+
+9) every X seconds:
+- content sends to background, and background saves:
+-- user info
+-- total workouts (only if there's user info - can be triggered after user info get)
+- popup query only the background for user info + total workouts.
+
+if no user info on content -> delete user info + total workouts on background.
