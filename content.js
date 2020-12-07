@@ -1,55 +1,89 @@
-function getUserInfo(){
+function getSessionInfo(sessionInfo){
     let profileInfo = document.getElementsByClassName("header-member-profile-name")[0];
-    let userId, userName;
+    sessionInfo.loggedIn = true;
 
     if(profileInfo){
-        userId = profileInfo.href.split('/').pop();
-        userName = profileInfo.innerText;
+        sessionInfo.userId = profileInfo.href.split('/').pop();
+        sessionInfo.userName = profileInfo.innerText;
+        sessionInfo.loggedIn = true;
         // console.log('found profile info by method 1');
     } else {
-        profileInfo = $(".headerRightContent").find("a[href*='profile']")[0];
-        userId = profileInfo.href.split('/').pop();
-        userName = profileInfo.innerText;
-        // console.log('found profile info by method 2');
+        profileInfo = $(".headerRightContent");
+        if(profileInfo && profileInfo.length){
+            profileInfo = profileInfo.find("a[href*='profile']")[0];
+            sessionInfo.userId = profileInfo.href.split('/').pop();
+            sessionInfo.userName = profileInfo.innerText;
+            sessionInfo.loggedIn = true;
+            // console.log('found profile info by method 2');
+        } else {
+            sessionInfo.loggedIn = false;
+        }
     }
 
-    // chrome.runtime.sendMessage({action: "user_info", userId: userId, userName: userName});
-    let userInfo = {};
-    if(userId && userName){
-        userInfo = {userId: userId, userName: userName};
+    console.debug("[getSessionInfo] search for session info in dom: ", sessionInfo);
+    return sessionInfo;
+}
+
+function updateSessionInfo(sessionInfo, config){
+    getSessionInfo(sessionInfo);
+    if(sessionInfo.loggedIn){
+        console.debug("set config.sessionInfoTimer to 5000 milis");
+        config.sessionInfoTimer = 5000;
+    }
+    setTimeout(updateSessionInfo, config.totalWorkoutTimer, sessionInfo, config);
+}
+
+async function getWorkout(limit, userId){
+    if(!userId){
+        console.warn("can't get workouts for userId: ", userId);
+        return {};
+    }
+    let response = await fetch("https://www.endomondo.com/rest/v1/users/" + userId + "/workouts/history?limit=" + limit + "&expand=workout%3Afull", {});
+    return await response.json();
+}
+
+async function getTotalWorkouts(sessionInfo){
+    let res = await getWorkout(1, sessionInfo.userId);
+    let total = undefined;
+    if(res && res.paging){
+        sessionInfo.totalWorkouts = res.paging.total;
+        console.debug("[getTotalWorkouts]: get total workouts: ", sessionInfo.totalWorkouts);
+        total = sessionInfo.totalWorkouts;
+    }
+    return total;
+}
+
+async function updateTotalWorkouts(sessionInfo, config){
+    try{
+        if(sessionInfo && sessionInfo.loggedIn){
+            sessionInfo.totalWorkouts = await getTotalWorkouts(sessionInfo);
+            console.debug("sessionInfo.totalWorkouts: ", sessionInfo.totalWorkouts);
+            if(sessionInfo.totalWorkouts){
+                console.debug("set config.totalWorkoutTimer to 5000 milis");
+                config.totalWorkoutTimer = 5000;
+            }
+        } else {
+            delete(sessionInfo.totalWorkouts);
+        }
+    } catch (e) {
+        // clearInterval(totalWorkoutsTimeout);
+        console.error("[totalWorkoutsTimeout2] getTotalWorkouts got an error: ", e);
     }
 
-    console.debug("get user info from dom: ", userInfo);
-    return userInfo;
+    setTimeout(updateTotalWorkouts, config.totalWorkoutTimer, sessionInfo, config);
 }
 
 (async function() {
     console.log("my extension: from content script!");
     let downloadInterval;
-    // let userInfo = getUserInfo();
-    let userInfo = {};
-    let totalWorkout = "";
+    let sessionInfo = {};
+    let config = {
+        totalWorkoutTimer: 1000,
+        sessionInfoTimer: 1000
+    };
 
-    /* Inject Code */
-    // NOTE: not in used at the moment - ger user info from DOM.
-    //
-    // Inject get_user_info_script.js
-    let s = document.createElement('script');
-    //
-    s.src = chrome.runtime.getURL('get_user_info_script.js');
-    // s.onload = function() {
-    //     this.remove();
-    // };
-    (document.head || document.documentElement).appendChild(s);
-
-    async function getWorkout(limit, userId){
-        if(!userId){
-            console.warn("can't get workouts for userId: ", userId);
-            return;
-        }
-        let response = await fetch("https://www.endomondo.com/rest/v1/users/" + userId + "/workouts/history?limit=" + limit + "&expand=workout%3Afull", {});
-        return await response.json();
-    }
+    updateSessionInfo(sessionInfo, config)
+    updateTotalWorkouts(sessionInfo, config);
 
     async function getWorkoutsRaw(totalWorkouts, userId) {
         // TODO: remove totalWorkouts hard coded line !
@@ -143,88 +177,17 @@ function getUserInfo(){
         paginateWorkouts(wosInfo, userId, fileFormats);
     }
 
-    async function updateTotalWorkouts(){
-        let res = await getWorkout(1, userInfo.userId);
-        if(res && res.paging){
-            totalWorkout = res.paging.total;
-            console.log("updateTotalWorkouts: ", res.paging.total);
-        }
-        return totalWorkout;
-    }
-
     chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
-        console.log("got action: ", request.action);
+        // console.debug("got action: ", request.action);
 
-        if(request.action === "get_user_info_from_dom") {
-            if (Object.keys(userInfo).length === 0) {
-                userInfo = getUserInfo();
-            }
-            sendResponse(userInfo);
-            chrome.runtime.sendMessage({action: "save_user_info", userInfo: userInfo});
-            return true;
+        if(request.action === "get_session_info") {
+            // console.debug("got action: ", request.action);
+            sendResponse({sessionInfo: sessionInfo});
+            return;
         }
-
-        // if(request.action === "get_total_workouts_method_2"){
-        //     if(!userInfo.userId){
-        //         return;
-        //     }
-        //     if(totalWorkout) {
-        //         sendResponse({totalWorkouts: totalWorkout});
-        //         setTimeout(updateTotalWorkouts, 5000);
-        //     } else {
-        //         await updateTotalWorkouts();
-        //         sendResponse({totalWorkouts: totalWorkout});
-        //     }
-        //     //
-        //     // let res = await getWorkout(1, userInfo.userId);
-        //     // if(res && res.paging){
-        //     //     totalWorkout = res.paging.total;
-        //     //     sendResponse({totalWorkouts: res.paging.total});
-        //     //     console.log("res.paging.total: ", res.paging.total);
-        //     // }
-        //     return true;
-        // }
-
-        if(request.action === "get_total_workouts_number"){
-            let res = await getWorkout(1, request.userId);
-            if(res && res.paging){
-                chrome.runtime.sendMessage({action: "total_workouts_response", data: res.paging.total});
-            }
-            return true;
-        }
-
-        // if(request.action === "fetch_all_workouts_xmls") {
-        //     getAllWorkouts(request.totalWorkouts, request.userId);
-        //     // TODO: make the btn disabled, until all workouts has been downloaded (the background would know).
-        //     return true;
-        // }
-        //
-        // if(request.action === "stop_fetch_all_workouts_xmls") {
-        //     if(downloadInterval){
-        //         clearInterval(downloadInterval);
-        //         downloadInterval = undefined;
-        //         //    TODO: send a message to popup to enable the download button again.
-        //     }
-        //     return true;
-        // }
-
-        // if(request.action === "stop_get_xmls_from_content") {
-        //     if(downloadInterval){
-        //         clearInterval(downloadInterval);
-        //         downloadInterval = undefined;
-        //         //    TODO: send a message to popup to enable the download button again.
-        //     }
-        //     return true;
-        // }
 
         if(request.action === "get_xmls_from_content"){
             getAllWorkouts(request.totalWorkouts, request.userId, ["TCX", "GPX"]);
-
-            // This is works, uncomment for download one file as an example:
-            // res = await getWorkoutXML();
-            // // TODO: entry point for scraping all workouts
-            // //      add also startTime json to map IDs
-            // chrome.runtime.sendMessage({action: "get_xmls_from_content_response", data: res});
             return true;
         }
 
