@@ -1,6 +1,5 @@
 console.log("my extension: from background!");
 
-let downloadInProgress = false;
 let sessionInfo = {};
 let endomondoRE = /^https:\/\/www\.endomondo/;
 
@@ -8,9 +7,9 @@ let sessionBgInterval = setInterval(function(){
     try{
         chrome.tabs.query({ active: true, currentWindow: true }, function(tabs){
             if(tabs && tabs[0] && endomondoRE.test(tabs[0].url)){
-                chrome.tabs.sendMessage(tabs[0].id, {action: "get_session_info"}, response => {
+                chrome.tabs.sendMessage(tabs[0].id, {action: "content.get_session_info"}, response => {
                     if(response && response.sessionInfo){
-                        sessionInfo = response.sessionInfo;
+                        Object.assign(sessionInfo, response.sessionInfo);
                     }
                     console.debug("[sessionBgInterval] sessionInfo: ", sessionInfo);
                 });
@@ -23,10 +22,12 @@ let sessionBgInterval = setInterval(function(){
 }, 200);
 
 function getXmlsFromContent(){
-    console.log("[start] get xmls from content")
+    console.info("[getXmlsFromContent] get xmls from content - start")
 
     chrome.tabs.query({ active: true, currentWindow: true }, function(tabs){
+        console.info("[getXmlsFromContent]: result tabs of chrome.tabs.query: ", tabs);
         if(tabs && tabs[0] && endomondoRE.test(tabs[0].url)) {
+            console.info("[getXmlsFromContent] tabs[0]: ", tabs[0].url);
             chrome.tabs.sendMessage(tabs[0].id,
                 {
                     action: "get_xmls_from_content",
@@ -35,27 +36,32 @@ function getXmlsFromContent(){
                 });
         }
     });
-    console.log("[end] get xmls from content")
+    console.info("[getXmlsFromContent] get xmls from content - end")
 
 }
 
 function downloadFile(options) {
-    let fileFormat = options.fileFormat.toLowerCase();
-    let contentType = `text/${fileFormat}+xml`;
+    const subfolder = "endomondo-export-workouts";
+    const fileFormat = options.fileFormat.toLowerCase();
+    const contentType = `text/${fileFormat}+xml`;
     if(!options.url) {
-        var blob = new Blob([options.content], {type : `${contentType};charset=UTF-8`});
+        const blob = new Blob([options.content], {type : `${contentType};charset=UTF-8`});
         options.url = window.URL.createObjectURL(blob);
     }
     chrome.downloads.download({
         url: options.url,
-        filename: `${options.filename}.${fileFormat}`
-    })
+        filename: `${subfolder}/${fileFormat}/${options.filename}.${fileFormat}`
+    },_ => {
+        sessionInfo.currFile++;
+        console.debug(sessionInfo.currFile);
+    });
+
+    // Debug without downloading:
+    // sessionInfo.currFile++;
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log("onMessage: got action: ", request.action)
-
-    if (request.action === "get_session_info") {
+    if (request.action === "bg.get_session_info") {
         console.debug("onMessage: got action: ", request.action);
 
         sendResponse({sessionInfo: sessionInfo});
@@ -66,7 +72,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.info("onMessage: got action: ", request.action);
 
         console.log('File Name to be downlaod: ', request.fileName);
-        // console.log('skip download ... content: ', request.data.slice(0,50));
         downloadFile({
             filename: request.fileName,
             fileFormat: request.fileFormat,
@@ -79,12 +84,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.info("onMessage: got action: ", request.action);
 
         // get all workouts here.
-        downloadInProgress = true;
         if(sessionInfo.loggedIn){
+            delete(sessionInfo.currFile);
+            Object.assign(sessionInfo, { currFile: 0 });
             getXmlsFromContent();
         }
         return;
     }
+
+    console.info("onMessage - not handled action: ", request.action)
 })
-
-

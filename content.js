@@ -27,8 +27,8 @@ function getSessionInfo(sessionInfo){
 function updateSessionInfo(sessionInfo, config){
     getSessionInfo(sessionInfo);
     if(sessionInfo.loggedIn){
-        console.debug("set config.sessionInfoTimer to 5000 milis");
-        config.sessionInfoTimer = 5000;
+        config.sessionInfoTimer = 60000;
+        console.debug(`set config.sessionInfoTimer to ${config.sessionInfoTimer} millis`);
     }
     setTimeout(updateSessionInfo, config.totalWorkoutTimer, sessionInfo, config);
 }
@@ -59,8 +59,8 @@ async function updateTotalWorkouts(sessionInfo, config){
             sessionInfo.totalWorkouts = await getTotalWorkouts(sessionInfo);
             console.debug("sessionInfo.totalWorkouts: ", sessionInfo.totalWorkouts);
             if(sessionInfo.totalWorkouts){
-                console.debug("set config.totalWorkoutTimer to 5000 milis");
-                config.totalWorkoutTimer = 5000;
+                config.totalWorkoutTimer = 60000;
+                console.debug(`set config.totalWorkoutTimer to ${config.totalWorkoutTimer} millis`);
             }
         } else {
             delete(sessionInfo.totalWorkouts);
@@ -73,10 +73,11 @@ async function updateTotalWorkouts(sessionInfo, config){
     setTimeout(updateTotalWorkouts, config.totalWorkoutTimer, sessionInfo, config);
 }
 
+let sessionInfo = {};
+
 (async function() {
     console.log("my extension: from content script!");
     let downloadInterval;
-    let sessionInfo = {};
     let config = {
         totalWorkoutTimer: 1000,
         sessionInfoTimer: 1000
@@ -86,8 +87,6 @@ async function updateTotalWorkouts(sessionInfo, config){
     updateTotalWorkouts(sessionInfo, config);
 
     async function getWorkoutsRaw(totalWorkouts, userId) {
-        // TODO: remove totalWorkouts hard coded line !
-        totalWorkouts = 1;
         return await getWorkout(totalWorkouts, userId);
     }
 
@@ -173,15 +172,14 @@ async function updateTotalWorkouts(sessionInfo, config){
     async function getAllWorkouts(totalWorkouts, userId, fileFormats=["TCX","GPX"]){
         let wosRaw = await getWorkoutsRaw(totalWorkouts, userId);
         let wosInfo = getWorkoutsInfo(wosRaw);
-        console.log("wosInfo: ", wosInfo);
+        console.info("workouts info to be downloaded: ", wosInfo);
         paginateWorkouts(wosInfo, userId, fileFormats);
     }
 
     chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
         // console.debug("got action: ", request.action);
 
-        if(request.action === "get_session_info") {
-            // console.debug("got action: ", request.action);
+        if(request.action === "content.get_session_info") {
             sendResponse({sessionInfo: sessionInfo});
             return;
         }
@@ -191,8 +189,7 @@ async function updateTotalWorkouts(sessionInfo, config){
             return true;
         }
 
-
-        console.log(`No action was taken for request.action: "${request.action}"`);
+        console.warn("[content onMessage] - not handled action: ", request.action)
     });
 
 })();
