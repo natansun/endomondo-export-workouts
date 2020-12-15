@@ -26,8 +26,7 @@
     "activeTab",
     "tabs",
     "https://*.endomondo.com/*",
-    "downloads",
-    "storage"
+    "downloads"
   ],
   "icons": {
     "48": "icons/blue-48.png"
