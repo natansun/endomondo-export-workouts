@@ -23,7 +23,6 @@
     }
   ],
   "permissions": [
-    "activeTab",
     "tabs",
     "https://*.endomondo.com/*",
     "downloads"
