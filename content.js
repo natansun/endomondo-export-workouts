@@ -108,7 +108,10 @@ let sessionInfo = {};
         if(workoutsRaw.data){
             console.log("Got " + workoutsRaw.data.length + " workouts !");
             return workoutsRaw.data.map(workout => {
-                return {"id": workout.id, "startTime": formatStartTime(workout.start_time)};
+                return {"id": workout.id,
+                        "startTime": formatStartTime(workout.start_time),
+                        "title": workout.title
+                };
             });
         }
         return [];
@@ -150,13 +153,14 @@ let sessionInfo = {};
             console.log('my timer');
             for (let index = offset; index < offset + pageSize && index < total; index++) {
                 let workoutId = workoutsInfo[index].id;
+                let title = workoutsInfo[index].title;
                 let startTime = workoutsInfo[index].startTime;
 
                 for (let fileFormat of fileFormats){
                     // console.log('workout %d ID: %s (fileFormat: %s)', index + 1, workoutId, format);
                     getWorkoutXML(userId, workoutId, fileFormat).then(function(res){
                         console.log('workout %d ID: %s (format: %s) -> send XML to background to download', index + 1, workoutId, fileFormat);
-                        chrome.runtime.sendMessage({action: "download_file", fileName: startTime, fileFormat: fileFormat , data: res});
+                        chrome.runtime.sendMessage({action: "download_file", fileName: title || startTime, fileFormat: fileFormat , data: res});
                     });
                 }
             }
