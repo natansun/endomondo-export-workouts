@@ -77,6 +77,11 @@ let sessionInfo = {};
 
 (async function() {
     console.log("my extension: from content script!");
+
+    const messageTag = "Message";
+    const pictureTag = "Picture";
+    const picturesTag = "Pictures";
+
     let downloadInterval;
     let config = {
         totalWorkoutTimer: 1000,
@@ -137,6 +142,61 @@ let sessionInfo = {};
         })
     }
 
+    function tagNameToExtend(fileFormat){
+        let nodeToAppend;
+        switch (fileFormat) {
+            case "TCX":
+                nodeToAppend = "Activity";
+                break;
+            case "GPX":
+                nodeToAppend = "trk";
+                break;
+        }
+
+        return nodeToAppend;
+    }
+
+    function elementToExtend(xmlDoc, tagName) {
+        if(tagName){
+            const elements = xmlDoc.getElementsByTagName(tagName);
+            return elements[0];
+        }
+        return xmlDoc.children[0];
+    }
+
+    function extendXmlString(xmlString, nodeTag, nodeData, fileFormat){
+        // const xmlString = res;
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlString, "text/xml")
+        let newElem;
+
+        switch (nodeTag) {
+            case messageTag:
+                newElem = xmlDoc.createElement(messageTag);
+                newElem.innerHTML = nodeData;
+                break;
+
+            case picturesTag:
+                newElem = xmlDoc.createElement(picturesTag);
+                nodeData.map(picture => {
+                    let pictureNode = xmlDoc.createElement(pictureTag);
+                    pictureNode.setAttribute('id', picture.id)
+                    pictureNode.setAttribute('picture_token', picture.picture_token)
+                    pictureNode.setAttribute('url', picture.url)
+
+                    newElem.appendChild(pictureNode);
+                })
+                break;
+        }
+
+        let tagName = tagNameToExtend(fileFormat)
+        let elemToExtend = elementToExtend(xmlDoc, tagName);
+        elemToExtend.appendChild(newElem);
+
+        xmlString = new XMLSerializer().serializeToString(xmlDoc);
+        return xmlString;
+    }
+
     /**
      *
      * @param workoutsInfo contains both workout id and workout start time
@@ -162,57 +222,20 @@ let sessionInfo = {};
 
                 for (let fileFormat of fileFormats){
                     // console.log('workout %d ID: %s (fileFormat: %s)', index + 1, workoutId, format);
-                    getWorkoutXML(userId, workoutId, fileFormat).then(function(res){
-                        console.log('workout %d ID: %s (format: %s) -> send XML to background to download', index + 1, workoutId, fileFormat);
+                    getWorkoutXML(userId, workoutId, fileFormat).then(function(xmlString){
+                        const msgPrefix = `workout ${index + 1} ID: ${workoutId} (format: ${fileFormat})`;
+                        console.info(`${msgPrefix} -> send XML to background to download`);
                         if(message){
-                            const xmlString = res;
-                            const parser = new DOMParser();
-                            const xmlDoc = parser.parseFromString(xmlString, "text/xml")
-                            const messageNode = xmlDoc.createElement("Message");
-                            messageNode.innerHTML = message;
-
-                            let nodeToAppend;
-                            if(fileFormat === "TCX"){
-                                nodeToAppend = "Activity";
-                            }
-                            if(fileFormat === "GPX"){
-                                nodeToAppend = "trk";
-                            }
-                            const elements = xmlDoc.getElementsByTagName(nodeToAppend);
-                            elements[0].appendChild(messageNode)
-
-                            res = new XMLSerializer().serializeToString(xmlDoc);
+                            xmlString = extendXmlString(xmlString, messageTag, message, fileFormat);
+                            console.debug(`${msgPrefix} -> contains a "message": ${message}`);
                         }
 
                         if(pictures.length > 0){
-                            const xmlString = res;
-                            const parser = new DOMParser();
-                            const xmlDoc = parser.parseFromString(xmlString, "text/xml")
-                            const picturesNode = xmlDoc.createElement("Pictures");
-                            picturesNode.innerText = JSON.stringify(pictures);
+                            xmlString = extendXmlString(xmlString, picturesTag, pictures, fileFormat);
+                            console.debug(`${msgPrefix} -> contains "pictures": ${JSON.stringify(pictures)}`);
 
-                            pictures.map(picture => {
-                                let pictureNode = xmlDoc.createElement("Picture");
-                                pictureNode.setAttribute('id', picture.id)
-                                pictureNode.setAttribute('picture_token', picture.picture_token)
-                                pictureNode.setAttribute('url', picture.url)
-
-                                picturesNode.appendChild(pictureNode);
-                            })
-
-                            let nodeToAppend;
-                            if(fileFormat === "TCX"){
-                                nodeToAppend = "Activity";
-                            }
-                            if(fileFormat === "GPX"){
-                                nodeToAppend = "trk";
-                            }
-                            const elements = xmlDoc.getElementsByTagName(nodeToAppend);
-                            elements[0].appendChild(picturesNode)
-
-                            res = new XMLSerializer().serializeToString(xmlDoc);
                         }
-                        chrome.runtime.sendMessage({action: "download_file", fileName: title || startTime, fileFormat: fileFormat , data: res});
+                        chrome.runtime.sendMessage({action: "download_file", fileName: title || startTime, fileFormat: fileFormat , data: xmlString});
                     });
                 }
             }
