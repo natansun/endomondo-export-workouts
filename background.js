@@ -61,6 +61,15 @@ function downloadFile(options) {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if(request.action === "page_reload"){
+        console.info("onMessage: got action: ", request.action);
+        if(sessionInfo.loggedIn) {
+            delete (sessionInfo.currFile);
+        }
+
+        return;
+    }
+
     if (request.action === "bg.get_session_info") {
         console.debug("onMessage: got action: ", request.action);
 

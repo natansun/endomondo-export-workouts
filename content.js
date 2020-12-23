@@ -1,3 +1,6 @@
+console.log("my extension: from content script!");
+chrome.runtime.sendMessage({action: "page_reload" });
+
 function getSessionInfo(sessionInfo){
     let profileInfo = document.getElementsByClassName("header-member-profile-name")[0];
     sessionInfo.loggedIn = true;
@@ -34,11 +37,29 @@ function updateSessionInfo(sessionInfo, config){
 }
 
 async function getWorkout(limit, userId){
+    const userErrMsg = "Endomondo Workouts Downloader Extension:\n" +
+        "Download failed, please refresh the page, and try again";
+
     if(!userId){
         console.warn("can't get workouts for userId: ", userId);
         return {};
     }
-    let response = await fetch("https://www.endomondo.com/rest/v1/users/" + userId + "/workouts/history?limit=" + limit + "&expand=workout%3Afull", {});
+    let response = await fetch("https://www.endomondo.com/rest/v1/users/" + userId + "/workouts/history?limit=" + limit + "&expand=workout%3Afull", {})
+        .catch((error) => {
+            console.error("catch error: " , error);
+            // Your error is here!
+            alert(userErrMsg);
+            chrome.runtime.sendMessage({action: "page_reload" });
+            throw new Error("[getWorkout] Bad response from server");
+        });
+
+    if (response.status >= 400 && response.status < 600) {
+        console.error("response error code: " , response.status);
+        alert(userErrMsg);
+        chrome.runtime.sendMessage({action: "page_reload" });
+        throw new Error("[getWorkout] Bad response from server");
+    }
+
     return await response.json();
 }
 
@@ -76,8 +97,6 @@ async function updateTotalWorkouts(sessionInfo, config){
 let sessionInfo = {};
 
 (async function() {
-    console.log("my extension: from content script!");
-
     const messageTag = "Message";
     const pictureTag = "Picture";
     const picturesTag = "Pictures";
