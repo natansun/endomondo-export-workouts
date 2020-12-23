@@ -110,7 +110,9 @@ let sessionInfo = {};
             return workoutsRaw.data.map(workout => {
                 return {"id": workout.id,
                         "startTime": formatStartTime(workout.start_time),
-                        "title": workout.title
+                        "title": workout.title,
+                        "message": workout.message,
+                        "pictures": workout.pictures
                 };
             });
         }
@@ -155,11 +157,61 @@ let sessionInfo = {};
                 let workoutId = workoutsInfo[index].id;
                 let title = workoutsInfo[index].title;
                 let startTime = workoutsInfo[index].startTime;
+                let message = workoutsInfo[index].message;
+                let pictures = workoutsInfo[index].pictures;
 
                 for (let fileFormat of fileFormats){
                     // console.log('workout %d ID: %s (fileFormat: %s)', index + 1, workoutId, format);
                     getWorkoutXML(userId, workoutId, fileFormat).then(function(res){
                         console.log('workout %d ID: %s (format: %s) -> send XML to background to download', index + 1, workoutId, fileFormat);
+                        if(message){
+                            const xmlString = res;
+                            const parser = new DOMParser();
+                            const xmlDoc = parser.parseFromString(xmlString, "text/xml")
+                            const messageNode = xmlDoc.createElement("Message");
+                            messageNode.innerHTML = message;
+
+                            let nodeToAppend;
+                            if(fileFormat === "TCX"){
+                                nodeToAppend = "Activity";
+                            }
+                            if(fileFormat === "GPX"){
+                                nodeToAppend = "trk";
+                            }
+                            const elements = xmlDoc.getElementsByTagName(nodeToAppend);
+                            elements[0].appendChild(messageNode)
+
+                            res = new XMLSerializer().serializeToString(xmlDoc);
+                        }
+
+                        if(pictures.length > 0){
+                            const xmlString = res;
+                            const parser = new DOMParser();
+                            const xmlDoc = parser.parseFromString(xmlString, "text/xml")
+                            const picturesNode = xmlDoc.createElement("Pictures");
+                            picturesNode.innerText = JSON.stringify(pictures);
+
+                            pictures.map(picture => {
+                                let pictureNode = xmlDoc.createElement("Picture");
+                                pictureNode.setAttribute('id', picture.id)
+                                pictureNode.setAttribute('picture_token', picture.picture_token)
+                                pictureNode.setAttribute('url', picture.url)
+
+                                picturesNode.appendChild(pictureNode);
+                            })
+
+                            let nodeToAppend;
+                            if(fileFormat === "TCX"){
+                                nodeToAppend = "Activity";
+                            }
+                            if(fileFormat === "GPX"){
+                                nodeToAppend = "trk";
+                            }
+                            const elements = xmlDoc.getElementsByTagName(nodeToAppend);
+                            elements[0].appendChild(picturesNode)
+
+                            res = new XMLSerializer().serializeToString(xmlDoc);
+                        }
                         chrome.runtime.sendMessage({action: "download_file", fileName: title || startTime, fileFormat: fileFormat , data: res});
                     });
                 }
