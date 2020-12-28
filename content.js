@@ -1,3 +1,38 @@
+function StopWatch(){
+    let startTime, endTime;
+    let running = false;
+
+
+    function start() {
+        if (running){
+            console.warn(`[stopwatch.start] stopwatch is already running! last startTime: ${startTime}`);
+        }
+        running = true;
+        startTime = new Date();
+        console.info(`[stopwatch.start] new startTime was set to: ${startTime}`);
+        return startTime;
+    }
+
+    function end() {
+        if(!running){
+            console.warn("[stopwatch.end] no stopwatch to end. Run stopwatch.start before using stopwatch.end");
+            return;
+        }
+        running = false;
+        endTime = new Date();
+        let timeDiff = endTime - startTime; //in ms
+        // strip the ms
+        timeDiff /= 1000;
+
+        // get seconds
+        const seconds = Math.round(timeDiff);
+        console.log(`[stopwatch.end] seconds: ${seconds}`);
+        return seconds;
+    }
+
+    return {start: start, end:end};
+}
+
 console.log("my extension: from content script!");
 chrome.runtime.sendMessage({action: "page_reload" });
 
@@ -36,35 +71,38 @@ function updateSessionInfo(sessionInfo, config){
     setTimeout(updateSessionInfo, config.totalWorkoutTimer, sessionInfo, config);
 }
 
-async function getWorkout(limit, userId){
+async function newGetWorkout(userId, limit, offset=0){
     const userErrMsg = "Endomondo Workouts Downloader Extension:\n" +
-        "Download failed, please refresh the page, and try again";
+        "Download failed! Page will be refreshed and please try again";
 
     if(!userId){
         console.warn("can't get workouts for userId: ", userId);
         return {};
     }
-    let response = await fetch("https://www.endomondo.com/rest/v1/users/" + userId + "/workouts/history?limit=" + limit + "&expand=workout%3Afull", {})
+    let response = await fetch("https://www.endomondo.com/rest/v1/users/" + userId +
+                                    "/workouts/history?limit=" + limit +
+                                    "&offset=" + offset +
+                                    "&expand=workout%3Afull", {})
         .catch((error) => {
             console.error("catch error: " , error);
             // Your error is here!
             alert(userErrMsg);
             chrome.runtime.sendMessage({action: "page_reload" });
-            throw new Error("[getWorkout] Bad response from server");
+            location.reload();
         });
 
     if (response.status >= 400 && response.status < 600) {
         console.error("response error code: " , response.status);
         alert(userErrMsg);
         chrome.runtime.sendMessage({action: "page_reload" });
-        throw new Error("[getWorkout] Bad response from server");
+        location.reload();
     }
 
     return await response.json();
 }
 
 async function getTotalWorkouts(sessionInfo){
-    let res = await getWorkout(1, sessionInfo.userId);
+    let res = await newGetWorkout(sessionInfo.userId, 1);
     let total = undefined;
     if(res && res.paging){
         sessionInfo.totalWorkouts = res.paging.total;
@@ -80,7 +118,7 @@ async function updateTotalWorkouts(sessionInfo, config){
             sessionInfo.totalWorkouts = await getTotalWorkouts(sessionInfo);
             console.debug("sessionInfo.totalWorkouts: ", sessionInfo.totalWorkouts);
             if(sessionInfo.totalWorkouts){
-                config.totalWorkoutTimer = 60000;
+                config.totalWorkoutTimer = 120000;
                 console.debug(`set config.totalWorkoutTimer to ${config.totalWorkoutTimer} millis`);
             }
         } else {
@@ -97,6 +135,8 @@ async function updateTotalWorkouts(sessionInfo, config){
 let sessionInfo = {};
 
 (async function() {
+    let stopwatch = new StopWatch();
+
     const messageTag = "Message";
     const pictureTag = "Picture";
     const picturesTag = "Pictures";
@@ -110,8 +150,8 @@ let sessionInfo = {};
     updateSessionInfo(sessionInfo, config)
     updateTotalWorkouts(sessionInfo, config);
 
-    async function getWorkoutsRaw(totalWorkouts, userId) {
-        return await getWorkout(totalWorkouts, userId);
+    async function newGetWorkoutsRaw(userId, limit, offset) {
+        return await newGetWorkout(userId, limit, offset);
     }
 
     /**
@@ -143,22 +183,19 @@ let sessionInfo = {};
         return [];
     }
 
-    async function getWorkoutXML(userId, workoutId, fileFormat){
-        return await new Promise(resolve =>{
-            let woURL = `https://www.endomondo.com/rest/v1/users/${userId}/workouts/${workoutId}/export?format=${fileFormat}`;
-            let http = new XMLHttpRequest();
-
-            http.open('GET', woURL, true);
-
-            http.onreadystatechange = function() {//Call a function when the state changes.
-                if(http.readyState === 4 && http.status === 200) {
-                    let resp = http.responseText;
-                    resolve(resp);
-                }
-            }
-
-            http.send();
-        })
+    async function fetchWorkoutXML(userId, workoutId, fileFormat){
+        let woURL = `https://www.endomondo.com/rest/v1/users/${userId}/workouts/${workoutId}/export?format=${fileFormat}`;
+        return await fetch(woURL, {
+            "headers": {
+                "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+                "accept-language": "en-US,en;q=0.9"
+            },
+            "referrerPolicy": "strict-origin-when-cross-origin",
+            "body": null,
+            "method": "GET",
+            "mode": "cors",
+            "credentials": "include"
+        }).then(res => res.text());
     }
 
     function tagNameToExtend(fileFormat){
@@ -189,89 +226,116 @@ let sessionInfo = {};
         const xmlDoc = parser.parseFromString(xmlString, "text/xml")
         let newElem;
 
-        switch (nodeTag) {
-            case messageTag:
-                newElem = xmlDoc.createElement(messageTag);
-                newElem.innerHTML = nodeData;
-                break;
+        try {
+            switch (nodeTag) {
+                case messageTag:
+                    newElem = xmlDoc.createElement(messageTag);
+                    newElem.setAttribute('text', nodeData)
+                    break;
 
-            case picturesTag:
-                newElem = xmlDoc.createElement(picturesTag);
-                nodeData.map(picture => {
-                    let pictureNode = xmlDoc.createElement(pictureTag);
-                    pictureNode.setAttribute('id', picture.id)
-                    pictureNode.setAttribute('picture_token', picture.picture_token)
-                    pictureNode.setAttribute('url', picture.url)
+                case picturesTag:
+                    newElem = xmlDoc.createElement(picturesTag);
+                    nodeData.map(picture => {
+                        let pictureNode = xmlDoc.createElement(pictureTag);
+                        pictureNode.setAttribute('id', picture.id)
+                        pictureNode.setAttribute('picture_token', picture.picture_token)
+                        pictureNode.setAttribute('url', picture.url)
 
-                    newElem.appendChild(pictureNode);
-                })
-                break;
+                        newElem.appendChild(pictureNode);
+                    })
+                    break;
+            }
+
+            let tagName = tagNameToExtend(fileFormat)
+            let elemToExtend = elementToExtend(xmlDoc, tagName);
+            elemToExtend.appendChild(newElem);
+
+            xmlString = new XMLSerializer().serializeToString(xmlDoc);
+        } catch (e) {
+            console.error("Extended XML error: ", e);
         }
 
-        let tagName = tagNameToExtend(fileFormat)
-        let elemToExtend = elementToExtend(xmlDoc, tagName);
-        elemToExtend.appendChild(newElem);
-
-        xmlString = new XMLSerializer().serializeToString(xmlDoc);
         return xmlString;
     }
 
-    /**
-     *
-     * @param workoutsInfo contains both workout id and workout start time
-     * @param userId the user id
-     * @param fileFormats
-     *
-     * Download every couple of seconds several workouts (not all at once).
-     */
-    function paginateWorkouts(workoutsInfo, userId, fileFormats=["TCX","GPX"]){
-        let offset = 0;
-        let pageSize = 4;
-        let total = workoutsInfo.length;
+    async function newPaginateWorkouts(totalWorkouts, userId, fileFormats=["TCX","GPX"]){
+        let config = {};
+        config.offset = 0;
+        config.pageSize = 20;
+        config.total = totalWorkouts;
+        config.count = 0;
 
-        console.log('set timer to get workouts');
-        downloadInterval = setInterval(function(){
+        stopwatch.start();
+
+        async function innerPagination(configs){
+            console.log('set timer to get workouts');
+            let wosRaw = await newGetWorkoutsRaw(userId, configs.pageSize, configs.offset * configs.pageSize);
             console.log('my timer');
-            for (let index = offset; index < offset + pageSize && index < total; index++) {
-                let workoutId = workoutsInfo[index].id;
-                let title = workoutsInfo[index].title;
-                let startTime = workoutsInfo[index].startTime;
-                let message = workoutsInfo[index].message;
-                let pictures = workoutsInfo[index].pictures;
+            let wosInfo = {
+                "GPX": [],
+                "TCX": []
+            };
 
-                for (let fileFormat of fileFormats){
-                    // console.log('workout %d ID: %s (fileFormat: %s)', index + 1, workoutId, format);
-                    getWorkoutXML(userId, workoutId, fileFormat).then(function(xmlString){
-                        const msgPrefix = `workout ${index + 1} ID: ${workoutId} (format: ${fileFormat})`;
-                        console.info(`${msgPrefix} -> send XML to background to download`);
-                        if(message){
-                            xmlString = extendXmlString(xmlString, messageTag, message, fileFormat);
-                            console.debug(`${msgPrefix} -> contains a "message": ${message}`);
-                        }
+            for (let fileFormat of fileFormats){
+                wosInfo[fileFormat] = getWorkoutsInfo(wosRaw).map((wo, index) =>{
+                    wo.fileFormat = fileFormat;
+                    wo.index = index + 1 + ( config.offset * config.pageSize );
+                    return wo;
+                });
+            }
+            let allWorkouts = wosInfo["GPX"].concat(wosInfo["TCX"]);
 
-                        if(pictures.length > 0){
-                            xmlString = extendXmlString(xmlString, picturesTag, pictures, fileFormat);
-                            console.debug(`${msgPrefix} -> contains "pictures": ${JSON.stringify(pictures)}`);
+            await Promise.all(
+                allWorkouts.map(async workout => {
+                    let fileFormat = workout.fileFormat;
+                    let workoutId = workout.id;
+                    let title = workout.title;
+                    let startTime = workout.startTime;
+                    let message = workout.message;
+                    let pictures = workout.pictures;
 
-                        }
-                        chrome.runtime.sendMessage({action: "download_file", fileName: title || startTime, fileFormat: fileFormat , data: xmlString});
+                    let xmlString = await fetchWorkoutXML(userId, workoutId, fileFormat);
+                    const msgPrefix = `workout ${workout.index} ID: ${workoutId} (format: ${fileFormat})`;
+                    console.info(`${msgPrefix} -> send XML to background to download`);
+                    if (message) {
+                        xmlString = extendXmlString(xmlString, messageTag, message, fileFormat);
+                        console.debug(`${msgPrefix} -> contains a "message": ${message}`);
+                    }
+
+                    if (pictures.length > 0) {
+                        xmlString = extendXmlString(xmlString, picturesTag, pictures, fileFormat);
+                        console.debug(`${msgPrefix} -> contains "pictures": ${JSON.stringify(pictures)}`);
+
+                    }
+                    chrome.runtime.sendMessage({
+                        action: "download_file",
+                        fileName: title || startTime,
+                        fileFormat: fileFormat,
+                        data: xmlString
                     });
-                }
-            }
-            offset += pageSize;
-            if(offset >= total){
-                console.log('clear timer to get workouts');
-                clearInterval(downloadInterval);
-                downloadInterval = undefined;
-            }
-        }, 2000 );
-    }
 
-    async function getAllWorkouts(totalWorkouts, userId, fileFormats=["TCX","GPX"]){
-        let wosRaw = await getWorkoutsRaw(totalWorkouts, userId);
-        let wosInfo = getWorkoutsInfo(wosRaw);
-        console.info("workouts info to be downloaded: ", wosInfo);
-        paginateWorkouts(wosInfo, userId, fileFormats);
+                    workout.xmlString = xmlString;
+                    return workout;
+                })
+            ).then((_ => {
+                configs.offset += 1;
+                configs.count += configs.pageSize;
+                if(configs.count >= configs.total){
+                    console.info('Download is done - clear timer to get workouts');
+                    clearInterval(downloadInterval);
+                    downloadInterval = undefined;
+                    let downloadTime = stopwatch.end();
+                    const downloadDoneMsg = "Endomondo Workouts Downloader Extension:\n" +
+                        "Download is Done - total download time: " + downloadTime + " seconds";
+
+                    alert(downloadDoneMsg);
+                } else {
+                    setTimeout(innerPagination, 2000, configs);
+                }
+            }));
+        }
+
+        await innerPagination(config);
     }
 
     chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
@@ -283,7 +347,7 @@ let sessionInfo = {};
         }
 
         if(request.action === "get_xmls_from_content"){
-            getAllWorkouts(request.totalWorkouts, request.userId, ["TCX", "GPX"]);
+            await newPaginateWorkouts(request.totalWorkouts, request.userId, ["TCX", "GPX"]);
             return true;
         }
 
