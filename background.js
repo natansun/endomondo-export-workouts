@@ -41,7 +41,7 @@ function getXmlsFromContent(){
 }
 
 function downloadFile(options) {
-    const subfolder = "endomondo-export-workouts";
+    const subfolder = "endomondo-workouts";
     const fileFormat = options.fileFormat.toLowerCase();
     const contentType = `text/${fileFormat}+xml`;
     if(!options.url) {
